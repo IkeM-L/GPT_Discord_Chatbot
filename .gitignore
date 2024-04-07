@@ -1,0 +1,18 @@
+# Ignore specific files
+messages.csv
+message_history.json
+CONFIG.py
+
+# Ignore directories or files starting with 'fine-tuned-model'
+fine-tuned-model*
+
+# Ignore the specific file in a nested directory
+Imitator/IMITATOR_CONFIG.py
+Imitator/messages_labled.csv
+
+# Ignore any file named 'model' at any level
+model
+**/model
+
+#Ignore everything in Individual folder
+individual/*

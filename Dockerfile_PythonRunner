@@ -1,0 +1,26 @@
+# Use an official Python runtime as a parent image
+FROM python:3.9-slim
+
+# Set the working directory in the container
+WORKDIR /usr/src/app
+
+# install numpy
+RUN pip install numpy
+
+# install pandas
+RUN pip install pandas
+
+# install scipy
+RUN pip install scipy
+
+# install scikit-learn
+RUN pip install scikit-learn
+
+# install sympy
+RUN pip install sympy
+
+# Copy the current directory contents into the container at /usr/src/app
+COPY . .
+
+# Run when the container launches
+CMD ["python3"]
