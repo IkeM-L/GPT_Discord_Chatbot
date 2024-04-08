@@ -1,12 +1,12 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from Imitator.IMITATOR_CONFIG import model_path
+from Imitator.IMITATOR_CONFIG import model_path, huggingface_token
 
 
 def generate_message(input_message, model_path):
     # Assume the model and tokenizer are saved in the same directory: model_path
-    tokenizer = AutoTokenizer.from_pretrained("Shaadowmaaster/FUaE", token="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", padding_side="left")
-    model = AutoModelForCausalLM.from_pretrained("Shaadowmaaster/FUaE", token="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")
+    tokenizer = AutoTokenizer.from_pretrained("Shaadowmaaster/FUaE", token=huggingface_token, padding_side="left")
+    model = AutoModelForCausalLM.from_pretrained("Shaadowmaaster/FUaE", token=huggingface_token)
 
     # Adjust if your model was trained with specific token as a delimiter, else keep using eos_token
     tokenizer.pad_token = tokenizer.eos_token

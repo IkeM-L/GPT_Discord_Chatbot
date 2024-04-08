@@ -3,6 +3,11 @@ from bs4 import BeautifulSoup
 
 class MagicStoryChecker:
     def __init__(self, url, storage_file='seen_articles.txt'):
+        """
+        Initialize the Magic Story checker with the URL of the Magic: The Gathering stories page.
+        :param url: The URL of the Magic: The Gathering stories page.
+        :param storage_file:  The file to store the set of seen articles.
+        """
         self.url = url
         self.storage_file = storage_file
         self.seen_articles = self.load_seen_articles()

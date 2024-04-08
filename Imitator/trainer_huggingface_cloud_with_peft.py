@@ -111,6 +111,11 @@ print("Initialized the Trainer.")
 # Fine-tune the model
 trainer.train()
 
+# Save the fine-tuned model to cloud
+tokenizer.push_to_hub(output_dir, private=True)
+model.push_to_hub(output_dir, private=True)
+print("Saved the fine-tuned model.")
+
 # Save the fine-tuned model
 trainer.save_model(output_dir)
 tokenizer.save_pretrained(output_dir + "_tokenizer")

@@ -16,3 +16,5 @@ model
 
 #Ignore everything in Individual folder
 individual/*
+
+__pycache__/*

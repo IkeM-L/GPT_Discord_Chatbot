@@ -34,7 +34,6 @@ model = AutoModelForCausalLM.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 
 # Tokenize the dataset
-# Tokenize the dataset with the corrected function
 def tokenize_function(examples):
     concatenated_examples = [p + " <|endoftext|> " + r for p, r in zip(examples['prompt'], examples['response'])]
     return tokenizer(concatenated_examples, truncation=True, padding="max_length", max_length=512)
@@ -73,6 +72,11 @@ trainer = CustomTrainer(
 
 # Fine-tune the model
 trainer.train()
+
+# Save the fine-tuned model to cloud
+tokenizer.push_to_hub(output_dir, private=True)
+model.push_to_hub(output_dir, private=True)
+print("Saved the fine-tuned model.")
 
 # Save the fine-tuned model
 trainer.save_model(output_dir)
