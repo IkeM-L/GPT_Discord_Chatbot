@@ -2,8 +2,8 @@
 /en/news/magic-story/episode-6-the-ballad-of-thieves-and-thunderslingers
 /en/news/magic-story/blood-is-thicker-than-venom
 /en/news/magic-story/episode-2-monsters-we-became
-/en/news/magic-story/episode-1-ghosts-of-our-past
 /en/news/magic-story/epilogue-2-bring-the-end-part-2
+/en/news/magic-story/episode-1-ghosts-of-our-past
 /en/news/magic-story/episode-7-rot-before-recovery
 /en/news/magic-story/episode-3-a-train-to-prosperity
 /en/news/magic-story/episode-1-an-offer-of-revenge
