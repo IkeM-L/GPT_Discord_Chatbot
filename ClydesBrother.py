@@ -427,4 +427,5 @@ async def fetch_messages_after_date(channel_id, after_date):
 
 # Final setup
 discord_client.run(discord_api_key)
+# Ensure that the message graph is saved when the bot exits
 atexit.register(lambda: message_graph.save_messages())
