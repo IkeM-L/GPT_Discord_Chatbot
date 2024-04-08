@@ -78,6 +78,8 @@ In order to train the model, you will need to:
 
 In order to run inference on the model, run ``python imitator_message_gen.py`` or the dev version ``python message_gen_dev.py``. This will generate a message in the style of the messages in the ``messages.csv`` file.
 
+Note: The non-dev version will use the ``distillgpt2`` tokenizer, this should  be changed to the tokenizer used in training if you are using a different model 
+
 ## Magic Story Scraping
 
 The bot will check the WotC website for new magic story updated every half an hour and, if a new one is found, send it to the given channel. See ``FindNewMagicStory.py`` for more information.
