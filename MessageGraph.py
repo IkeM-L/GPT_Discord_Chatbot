@@ -23,9 +23,9 @@ class MessageGraph:
         """
         if message_id is None:  # While not recommended, it is possible to use any data type as message IDs
             return "Message ID cannot be None"
-        if role is None or role not in ["user", "assistant", "tool"]:
+        if role is None or role not in ["user", "assistant", "tool", "system"]:
             return "Invalid role"
-        if content is None or content is not str:
+        if content is None:
             return "Content cannot be None"
         if timestamp is None:
             return "Timestamp cannot be None"
