@@ -2,27 +2,26 @@
 
 ## Run the main bot
 
-To run the bot, add a CONFIG.py with the following variables:
+To run the bot, add a secrets.json with the following variables:
 
-```python
-discord_api_key = 'YOUR DISCORD API KEY'
-openai_api_key = 'YOUR OPENAI API KEY'
-
-initial_prompt = ("""
-                  You are a Discord bot that responds to messages in a discord, which are given in the format USERNAME: MESSAGE. 
-                  ONLY use python when NECESSARY and ONLY for CALCULATIONS.
-                  """)
-
-tools = [] # Add tools here as described below, or keep it empty if you don't want to use any tools
+```json
+{
+  "discord_api_key": "YOUR API KEY",
+  "openai_api_key": "YOUR API KEY"
+}
 ```
-
-NB: You can add anything you want to the initial prompt, but it is recommended to include those lines as the bot can be very over-eager to use python and can misinterpret the structure of messages it is given otherwise
 
 Then run the bot with `python ClydesBrother.py`
 
+## CONFIG.py
+
+The CONFIG.py file is used to define the tools that the bot can use and it's initial prompt.
+
+The below are the default tool definitions:
+
 ## Python Tool Use
 
-To enable python tool use, add the following to the CONFIG.py file:
+To enable python tool use, the following is in the CONFIG.py file:
 
 ```python
 tools = [
@@ -52,7 +51,7 @@ This will allow the bot to execute python code in a container. See ``DockerPytho
 
 ## Timer tool use
 
-To allow the bot to set timers, add the following to the CONFIG.py file:
+To allow the bot to set timers, the following is in the CONFIG.py file:
 
 ```python
 tools = [

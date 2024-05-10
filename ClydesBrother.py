@@ -12,9 +12,15 @@ from Imitator.IMITATOR_CONFIG import model_path
 from Imitator.imitator_message_gen import generate_message
 from MessageGraph import MessageGraph
 from openai import OpenAI
-from CONFIG import discord_api_key, openai_api_key, tools, initial_prompt
+from CONFIG import tools, initial_prompt
 from Imitator.GetMessages import save_messages
 from TimerTool import set_timer
+
+# Initialize the Discord API key and OpenAI API key from secrets.json
+with open("secrets.json") as secrets_file:
+    secrets = json.load(secrets_file)
+    discord_api_key = secrets["discord_api_key"]
+    openai_api_key = secrets["openai_api_key"]
 
 # Initialize clients and important variables
 intents = discord.Intents.default()
