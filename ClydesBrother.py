@@ -1,6 +1,6 @@
 import atexit
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 import discord
 import json
 import time
@@ -14,6 +14,7 @@ from MessageGraph import MessageGraph
 from openai import OpenAI
 from CONFIG import discord_api_key, openai_api_key, tools, initial_prompt
 from Imitator.GetMessages import save_messages
+from TimerTool import set_timer
 
 # Initialize clients and important variables
 intents = discord.Intents.default()
@@ -25,7 +26,7 @@ openai_client = OpenAI(api_key=openai_api_key)
 model = "gpt-4-turbo-preview"
 message_graph = MessageGraph('message_history.json')
 scrape_messages = False
-response_chance = 0.05
+response_chance = 0.005
 
 # Channels for special actions
 scrape_messages_channel_id = 944200738605776906
@@ -55,6 +56,36 @@ async def post_new_articles():
         await channel.send(f"https://magic.wizards.com{article}")
 
 
+@tasks.loop(seconds=30)
+async def check_timers():
+    """Check for timers and perform actions when they expire."""
+    with open("timers.json", "r") as file:
+        timers = json.load(file)
+
+    # Get current time
+    current_time = datetime.now()
+    updated_timers = []
+
+    # Check each timer
+    for timer in timers:
+        expire_time = datetime.fromisoformat(timer['expire_time'])
+
+        # If the timer has expired, perform the action
+        if current_time >= expire_time:
+            # Send the message
+            print(f"Timer expired: {timer['name']}")
+            user = await discord_client.fetch_user(timer['user_id'])  # Fetch the user based on user_id
+            channel = discord_client.get_channel(timer['channel_id'])
+            await channel.send(f"{user.mention} your timer '{timer['name']}' expired")
+        else:
+            # Only re-add timers that have not yet expired
+            updated_timers.append(timer)
+
+    # Save the updated list of timers back to the file
+    with open("timers.json", "w") as file:
+        json.dump(updated_timers, file)
+
+
 # Event Handlers
 @discord_client.event
 async def on_ready():
@@ -62,7 +93,11 @@ async def on_ready():
     Runs when the bot is ready and starts various tasks.
     """
     print(f'We have logged in as {discord_client.user}')
+    # Start our tasks
     post_new_articles.start()
+    check_timers.start()
+
+    # Scrape messages from a channel if enabled
     if scrape_messages:
         messages = await fetch_messages_after_date(scrape_messages_channel_id, "2023-01-02")
         print(f"Number of messages fetched: {len(messages)}")
@@ -305,9 +340,8 @@ async def process_tool_calls(message, response):
         # Dispatch the tool call to its handler
         if tool_name == "python":
             await handle_python_tool_call(message, tool_call)
-        # Example: Add new tool handlers here
-        # elif tool_name == "new_tool":
-        #     await handle_new_tool_call(message, tool_call)
+        elif tool_name == "timer":
+            await handle_timer_tool_call(message, tool_call)
         else:
             print(f"No handler for tool: {tool_name}")
 
@@ -345,6 +379,49 @@ async def handle_python_tool_call(message, tool_call):
     tool_response_message = await tool_call_message.reply(f"```{response}```")
     # Log the tool call and the response in the message graph
     log_tool_call_in_message_graph(message.id, tool_call_message.id, tool_response_message.id, command, response)
+
+
+async def handle_timer_tool_call(message, tool_call):
+    # Get the parameters from the tool call
+    parameters = tool_call.function.arguments
+    if not parameters:
+        return
+    # Get the name and the time/relative time from the parameters
+    # Get the parameters as a dictionary from json
+    parameters = json.loads(parameters)
+    name = parameters.get("name")
+    time = parameters.get("time")
+    relative_time = parameters.get("relative_time")
+    if time is None and relative_time is None:
+        print("Error: Either time or relative_time must be provided.")
+        return
+    # Set the timer
+    if time:
+        await set_timer(message, discord_client, time, name)
+    elif relative_time:
+        # Get the current datetime
+        now = datetime.now()
+        # Parse the hours and minutes from the relative_time string
+        # Define possible time formats
+        time_formats = ["%H:%M", "%H:%M:%S"]
+
+        # Try parsing the relative_time using the defined formats
+        for time_format in time_formats:
+            try:
+                parsed_time = datetime.strptime(relative_time, time_format)
+                break
+            except ValueError:
+                continue
+        else:
+            # Handle the case where none of the formats matched
+            raise ValueError("Invalid time format. Please provide time in HH:MM or HH:MM:SS format.")
+
+        # Calculate the absolute time by adding the relative time to the current datetime
+        absolute_time = now + timedelta(hours=parsed_time.hour, minutes=parsed_time.minute, seconds=parsed_time.second)
+        # Convert the datetime object to an ISO 8601 formatted string
+        iso_format_time = absolute_time.isoformat()
+        # Pass the ISO 8601 string to the set_timer function
+        await set_timer(message, discord_client, iso_format_time, name)
 
 
 def parse_command_from_json(command):

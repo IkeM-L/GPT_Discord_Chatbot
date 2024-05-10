@@ -18,3 +18,5 @@ model
 individual/*
 
 __pycache__/*
+
+timers.json
