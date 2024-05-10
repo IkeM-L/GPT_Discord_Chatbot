@@ -10,17 +10,22 @@ async def set_timer(ctx, discord_client, time: str, timer_name: str):
         if datetime.datetime.now() >= timer_end:
             await ctx.reply("Error: The specified time must be in the future.")
             return
-        if (timer_end - datetime.datetime.now()) < datetime.timedelta(minutes=1):
-            await ctx.reply("Error: Timer must be at least 5 minutes long.")
+        if (timer_end - datetime.datetime.now()) < datetime.timedelta(seconds=25):
+            await ctx.reply("Error: Timer must be at least 25 seconds long.")
             return
     except ValueError:
         await ctx.reply("Invalid datetime format. Please use ISO 8601 format (YYYY-MM-DDTHH:MM).")
         return
 
+    # Format the datetime object to a more readable string
+    readable_time = timer_end.strftime("%B %d, %Y at %I:%M %p")
     # Post the timer confirmation message
     confirm_message = await ctx.reply(
-        f"To set the timer '{timer_name}' for {timer_end.isoformat()}, "
-        f"react with :thumbsup: to confirm or :x: to cancel.")
+        (
+            f"To set the timer '{timer_name}' for {readable_time}, "
+            "react with :thumbsup: to confirm or :x: to cancel."
+        )
+    )
     await confirm_message.add_reaction('👍')
     await confirm_message.add_reaction('❌')
 
@@ -34,7 +39,7 @@ async def set_timer(ctx, discord_client, time: str, timer_name: str):
     if str(reaction.emoji) == '👍':
         # Set the timer for the user who reacted with thumbsup
         add_timer(user.id, ctx.channel.id, timer_name, timer_end)
-        await ctx.reply(f"Timer set for {user.display_name} at {timer_end.isoformat()}.")
+        await ctx.reply(f"Timer set for {user.display_name} at {readable_time}.")
     elif str(reaction.emoji) == '❌' and user.id == ctx.author.id:
         # The user who requested the timer canceled it
         await ctx.reply("Timer setting canceled.")

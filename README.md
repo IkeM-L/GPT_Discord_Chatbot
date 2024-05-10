@@ -50,6 +50,43 @@ tools = [
 
 This will allow the bot to execute python code in a container. See ``DockerPythonExecutor.py`` for more information.
 
+## Timer tool use
+
+To allow the bot to set timers, add the following to the CONFIG.py file:
+
+```python
+tools = [
+    {
+      "type": "function",
+           "function": {
+               "name": "timer",
+               "description": "Allows you to set timers when the user requests it. "
+                              "You MUST include EITHER the time OR the relative_time parameter.",
+               "parameters": {
+                   "type": "object",
+                   "properties": {
+                       "time": {
+                           "type": "string",
+                           "description": "The ISO date for the timer"
+                       },
+                       "relative_time": {
+                           "type": "string",
+                           "description": "The relative time for the timer, in the format DD:HH:MM:SS"
+                       },
+                       "name": {
+                           "type": "string",
+                           "description": "The name of the timer"
+                       }
+                   },
+                   "required": [
+                       "name"
+                   ]
+               }
+           }
+       }
+]
+```
+
 NB: If you already have other tools available, you can add it to the list of tools
 
 ## Imitator Submodule

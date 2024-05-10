@@ -56,7 +56,7 @@ async def post_new_articles():
         await channel.send(f"https://magic.wizards.com{article}")
 
 
-@tasks.loop(seconds=30)
+@tasks.loop(seconds=5)
 async def check_timers():
     """Check for timers and perform actions when they expire."""
     with open("timers.json", "r") as file:
@@ -76,7 +76,7 @@ async def check_timers():
             print(f"Timer expired: {timer['name']}")
             user = await discord_client.fetch_user(timer['user_id'])  # Fetch the user based on user_id
             channel = discord_client.get_channel(timer['channel_id'])
-            await channel.send(f"{user.mention} your timer '{timer['name']}' expired")
+            await channel.send(f"{user.mention} :alarm_clock:: '{timer['name']}'")
         else:
             # Only re-add timers that have not yet expired
             updated_timers.append(timer)
@@ -186,6 +186,7 @@ async def on_message(message):
         async with message.channel.typing():
             await finalize_message_response(message, response, message_details['id'])
 
+# Message Processing Functions
 
 async def process_message(message_details):
     """
@@ -246,6 +247,7 @@ async def process_custom_prompt(message):
     # react with a thumbs up to indicate the prompt was received
     await message.add_reaction("👍")
 
+# OpenAI API Functions
 
 async def fetch_response_from_openai(message_chain):
     """
@@ -321,6 +323,8 @@ async def finalize_message_response(original_message, response, message_id):
     sent_message = await original_message.reply(response.content)
     response_id = sent_message.id
     message_graph.add_message(response_id, "assistant", response.content, time.time(), reply_to=message_id)
+
+# Tool Call Handlers
 
 
 async def process_tool_calls(message, response):
@@ -403,7 +407,7 @@ async def handle_timer_tool_call(message, tool_call):
         now = datetime.now()
         # Parse the hours and minutes from the relative_time string
         # Define possible time formats
-        time_formats = ["%H:%M", "%H:%M:%S"]
+        time_formats = ["%H:%M", "%H:%M:%S", "%D:%H:%M:%S"]
 
         # Try parsing the relative_time using the defined formats
         for time_format in time_formats:
