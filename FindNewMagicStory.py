@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 
+
 class MagicStoryChecker:
     def __init__(self, url, storage_file='seen_articles.txt'):
         """

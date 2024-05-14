@@ -1,26 +1,39 @@
 import atexit
-import random
-from datetime import datetime, timedelta
-import discord
 import json
+import random
 import time
-from discord.ext import tasks, commands
+from datetime import datetime, timedelta
+from typing import Tuple, List
 
-from FindNewMagicStory import MagicStoryChecker
+import discord
+from discord.ext import tasks
+from openai import OpenAI
+from openai.types.chat import ChatCompletionMessage, ChatCompletionMessageToolCall
+
+from CONFIG import tools, initial_prompt
 from DockerPythonExecutor import DockerPythonExecutor
+from FindNewMagicStory import MagicStoryChecker
+from Imitator.GetMessages import save_messages
 from Imitator.IMITATOR_CONFIG import model_path
 from Imitator.imitator_message_gen import generate_message
 from MessageGraph import MessageGraph
-from openai import OpenAI
-from CONFIG import tools, initial_prompt
-from Imitator.GetMessages import save_messages
 from TimerTool import set_timer
 
+# Constants
+SECRETS_FILE = "secrets.json"
+TIMERS_FILE = "timers.json"
+MESSAGE_HISTORY_FILE = 'message_history.json'
+SCRAPE_MESSAGES_CHANNEL_ID = 944200738605776906
+SCRAPE_START_DATE = "2023-01-02"
+MAGIC_STORY_CHANNEL_ID = 1032688705128902788
+RESPONSE_CHANCE = 0.005
+
 # Initialize the Discord API key and OpenAI API key from secrets.json
-with open("secrets.json") as secrets_file:
+# Initialize the Discord and OpenAI API keys
+with open(SECRETS_FILE) as secrets_file:
     secrets = json.load(secrets_file)
-    discord_api_key = secrets["discord_api_key"]
-    openai_api_key = secrets["openai_api_key"]
+    DISCORD_API_KEY = secrets["discord_api_key"]
+    OPENAI_API_KEY = secrets["openai_api_key"]
 
 # Initialize clients and important variables
 intents = discord.Intents.default()
@@ -28,32 +41,25 @@ intents.messages = True
 intents.guilds = True
 intents.message_content = True
 discord_client = discord.Client(intents=intents)
-openai_client = OpenAI(api_key=openai_api_key)
-model = "gpt-4-turbo-preview"
-message_graph = MessageGraph('message_history.json')
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
+model = "gpt-4o"
+message_graph = MessageGraph(MESSAGE_HISTORY_FILE)
 scrape_messages = False
-response_chance = 0.005
-
-# Channels for special actions
-scrape_messages_channel_id = 944200738605776906
-magic_story_channel_id = 1032688705128902788
 
 
 # Tasks
 @tasks.loop(minutes=30)
-async def post_new_articles():
+async def post_new_articles() -> None:
     """Check for and post new Magic Story articles."""
-    channel_id = magic_story_channel_id  # Specific channel ID
-    channel = discord_client.get_channel(channel_id)
-
+    channel = discord_client.get_channel(MAGIC_STORY_CHANNEL_ID)
     if channel is None:
-        print(f"Channel with ID {channel_id} not found.")
+        print(f"Channel with ID {MAGIC_STORY_CHANNEL_ID} not found.")
         return
 
     checker = MagicStoryChecker('https://magic.wizards.com/en/news/magic-story')
     new_articles = checker.get_new_articles()
     if not new_articles:
-        # Uncomment the next line if you want to log when no new articles are found
+        # Uncomment to log when no new articles are found
         # print("No new articles found.")
         return
 
@@ -63,10 +69,15 @@ async def post_new_articles():
 
 
 @tasks.loop(seconds=5)
-async def check_timers():
+async def check_timers() -> None:
     """Check for timers and perform actions when they expire."""
-    with open("timers.json", "r") as file:
-        timers = json.load(file)
+    # Try to check the timers file, if it doesn't exist, return
+    try:
+        with open(TIMERS_FILE, "r") as file:
+            timers = json.load(file)
+    except Exception as e:
+        print(f"Error reading timers file: {e}")
+        return
 
     # Get current time
     current_time = datetime.now()
@@ -88,13 +99,16 @@ async def check_timers():
             updated_timers.append(timer)
 
     # Save the updated list of timers back to the file
-    with open("timers.json", "w") as file:
-        json.dump(updated_timers, file)
+    try:
+        with open(TIMERS_FILE, "w") as file:
+            json.dump(updated_timers, file)
+    except Exception as e:
+        print(f"Error writing timers file: {e}")
 
 
 # Event Handlers
 @discord_client.event
-async def on_ready():
+async def on_ready() -> None:
     """
     Runs when the bot is ready and starts various tasks.
     """
@@ -105,22 +119,11 @@ async def on_ready():
 
     # Scrape messages from a channel if enabled
     if scrape_messages:
-        messages = await fetch_messages_after_date(scrape_messages_channel_id, "2023-01-02")
-        print(f"Number of messages fetched: {len(messages)}")
-        # Extract the contents of the messages
-        message_content = [f"{message.content}" for message in messages]
-        # save the contents of the messages to a file using the GetMessages.py script
-        save_messages(message_content)
-        usernames = [f"{message.author.display_name}" for message in messages]
-        unique_usernames = set(usernames)
-        # save each username's messages to a separate file
-        for username in unique_usernames:
-            user_messages = [f"{message.content}" for message in messages if message.author.display_name == username]
-            save_messages(user_messages, f"individual/{username}.csv")
+        await scrape_and_save_messages(SCRAPE_MESSAGES_CHANNEL_ID, SCRAPE_START_DATE)
 
 
 @discord_client.event
-async def on_message(message):
+async def on_message(message: discord.Message) -> None:
     """
     Handles incoming messages from the Discord server and decides how to respond.
     :param message: The message object.
@@ -143,58 +146,56 @@ async def on_message(message):
 
     # Allow the custom model to be used with imitator: prefix
     if message.content.startswith("imitator:"):
-        message.content = message.content[9:]
-        async with message.channel.typing():
-            response = generate_message(message.content, model_path)
-            await message.reply(response)
+        await process_imitator_prompt(message)
         return
 
-    # Parse the message
-    message_details = parse_message(message)
+    # Process general messages
+    async with message.channel.typing():
+        await process_general_message(message)
 
-    # check if the bot's ID is in mentions
+
+async def process_imitator_prompt(message: discord.Message) -> None:
+    content = message.content[9:]
+    async with message.channel.typing():
+        response = generate_message(content, model_path)
+        await message.reply(response)
+
+
+async def process_general_message(message: discord.Message) -> None:
+    """Processes general messages."""
+    message_details = parse_message(message)
     bot_mentioned = discord_client.user.id in [mention.id for mention in message.mentions]
 
-    global response_chance
-
-    # Ignore messages that don't mention the bot or reply to a message in the graph
     if message_details['author_role'] == "user" and not bot_mentioned and not message_details['reply_to_id']:
-        # chance of responding to a message that doesn't mention the bot using custom model
-        if random.random() < response_chance and message.channel == discord_client.get_channel(scrape_messages_channel_id):
-            async with message.channel.typing():
-                response = generate_message(message.content, model_path)
-                await message.reply(response)
-                print("Responded with custom model by chance")
+        if random.random() < RESPONSE_CHANCE and message.channel.id == SCRAPE_MESSAGES_CHANNEL_ID:
+            response = generate_message(message.content, model_path)
+            await message.reply(response)
+            print("Responded with custom model by chance")
         return
 
-    # Ignore messages that don't reply to a user message
     if message_graph.get_message_role(message_details['reply_to_id']) == "user":
         return
 
-    # Add the message to the message graph
-    message_graph.add_message(message_details['id'], message_details['author_role'], message_details['content'],
-                              time.time(), reply_to=message_details['reply_to_id'])
+    message_graph.add_message(
+        message_details['id'], message_details['author_role'], message_details['content'], time.time(),
+        reply_to=message_details['reply_to_id']
+    )
 
-    # start the BOT is typing indicator
-    async with message.channel.typing():
-        # Process the message and send a response
-        response, error = await process_message(message_details)
-        
+    response, error = await process_message(message_details)
+
     if error:
-        async with message.channel.typing():
-            await message.reply(error)
+        await message.reply(error)
         return
 
     if response.tool_calls:
-        async with message.channel.typing():
-            await process_tool_calls(message, response)
+        await process_tool_calls(message, response)
     else:
-        async with message.channel.typing():
-            await finalize_message_response(message, response, message_details['id'])
+        await finalize_message_response(message, response, message_details['id'])
+
 
 # Message Processing Functions
 
-async def process_message(message_details):
+async def process_message(message_details: dict) -> Tuple[ChatCompletionMessage, None] | Tuple[None, str]:
     """
     Processes incoming messages and returns a response.
     In particular, this function fetches a response from the OpenAI API based on the conversation history
@@ -214,7 +215,7 @@ async def process_message(message_details):
     return await fetch_response_from_openai(message_chain)
 
 
-def prepend_initial_prompt(message_id):
+def prepend_initial_prompt(message_id: int) -> None:
     """
     Prepends the initial prompt to the message chain if necessary.
     :param message_id: The ID of the message to prepend the initial prompt to.
@@ -227,7 +228,7 @@ def prepend_initial_prompt(message_id):
     message_graph.messages[message_id].parent_id = system_message_id
 
 
-async def process_custom_prompt(message):
+async def process_custom_prompt(message: discord.Message) -> None:
     """
     Adds a custom prompt to the message graph, so any replies to it will be generated based on the prompt.
     :param message: The message object containing the custom prompt.
@@ -235,10 +236,8 @@ async def process_custom_prompt(message):
     if not message:
         return
 
-    # Exclude the "prompt:" prefix
-    prompt = message.content[7:]
-    # Trim whitespace
-    prompt = prompt.strip()
+    # Exclude the "prompt:" prefix and trim whitespace
+    prompt = message.content[7:].strip()
     # Ensure the prompt is not empty
     if not prompt:
         await message.reply("Please provide a non-empty prompt.")
@@ -253,9 +252,10 @@ async def process_custom_prompt(message):
     # react with a thumbs up to indicate the prompt was received
     await message.add_reaction("👍")
 
+
 # OpenAI API Functions
 
-async def fetch_response_from_openai(message_chain):
+async def fetch_response_from_openai(message_chain: list) -> Tuple[ChatCompletionMessage, None] | Tuple[None, str]:
     """
     Fetches a response from the OpenAI API.
     :param message_chain: the conversation history
@@ -274,10 +274,11 @@ async def fetch_response_from_openai(message_chain):
         print(e)
         return None, f"Error: {str(e)}"
 
+
 # Utility Functions
 
 
-def parse_message(message):
+def parse_message(message: discord.Message) -> dict | None:
     """
     Extracts important information from the message object retrieved from Discord's API.
     :param message: The message object.
@@ -295,7 +296,7 @@ def parse_message(message):
     }
 
 
-def parse_reply_to_id(message):
+def parse_reply_to_id(message: discord.Message) -> int | None:
     """
     Extracts reply-to ID if available.
     :param message: The message object.
@@ -307,7 +308,8 @@ def parse_reply_to_id(message):
     return None
 
 
-async def finalize_message_response(original_message, response, message_id):
+async def finalize_message_response(original_message: discord.Message,
+                                    response: ChatCompletionMessage, message_id: int) -> None:
     """
     Finalizes and sends the response to the original message.
     We split the response into multiple messages if it's too long,
@@ -330,10 +332,11 @@ async def finalize_message_response(original_message, response, message_id):
     response_id = sent_message.id
     message_graph.add_message(response_id, "assistant", response.content, time.time(), reply_to=message_id)
 
+
 # Tool Call Handlers
 
 
-async def process_tool_calls(message, response):
+async def process_tool_calls(message: discord.Message, response: ChatCompletionMessage) -> None:
     """
     Processes tool calls within the response.
 
@@ -356,7 +359,7 @@ async def process_tool_calls(message, response):
             print(f"No handler for tool: {tool_name}")
 
 
-async def handle_python_tool_call(message, tool_call):
+async def handle_python_tool_call(message: discord.Message, tool_call: ChatCompletionMessageToolCall) -> None:
     """
     Handles tool calls for the Python executor tool.
 
@@ -372,9 +375,8 @@ async def handle_python_tool_call(message, tool_call):
     if not tool_call.function.arguments:
         return
 
-    command = tool_call.function.arguments
     # Parse the command in case it's in JSON format
-    command = parse_command_from_json(command)
+    command = parse_command_from_json(tool_call.function.arguments)
     # Send a message indicating the tool call is being processed
     tool_call_message = await message.reply(f"```python\n{command}```")
 
@@ -391,7 +393,13 @@ async def handle_python_tool_call(message, tool_call):
     log_tool_call_in_message_graph(message.id, tool_call_message.id, tool_response_message.id, command, response)
 
 
-async def handle_timer_tool_call(message, tool_call):
+async def handle_timer_tool_call(message: discord.Message, tool_call: ChatCompletionMessageToolCall) -> None:
+    """
+    Handles tool calls for the timer tool.
+    :param message:  The original message that triggered the tool call.
+    :param tool_call:  The tool call to handle.
+    :return:  None
+    """
     # Get the parameters from the tool call
     parameters = tool_call.function.arguments
     if not parameters:
@@ -399,15 +407,15 @@ async def handle_timer_tool_call(message, tool_call):
     # Get the name and the time/relative time from the parameters
     # Get the parameters as a dictionary from json
     parameters = json.loads(parameters)
-    name = parameters.get("name")
-    time = parameters.get("time")
+    timer_name = parameters.get("name")
+    timer_time = parameters.get("time")
     relative_time = parameters.get("relative_time")
-    if time is None and relative_time is None:
+    if timer_time is None and relative_time is None:
         print("Error: Either time or relative_time must be provided.")
         return
     # Set the timer
-    if time:
-        await set_timer(message, discord_client, time, name)
+    if timer_time:
+        await set_timer(message, discord_client, timer_time, timer_name)
     elif relative_time:
         # Get the current datetime
         now = datetime.now()
@@ -431,15 +439,15 @@ async def handle_timer_tool_call(message, tool_call):
         # Convert the datetime object to an ISO 8601 formatted string
         iso_format_time = absolute_time.isoformat()
         # Pass the ISO 8601 string to the set_timer function
-        await set_timer(message, discord_client, iso_format_time, name)
+        await set_timer(message, discord_client, iso_format_time, timer_name)
 
 
-def parse_command_from_json(command):
+def parse_command_from_json(command: str) -> str:
     """
     Attempts to parse the command from a JSON string.
     If the command is not a JSON string, or if it doesn't contain the "command" key,
     it returns the original command.
-    Note: The GPT API is inconsistent in how it formats the tool calls, so this function makes sure it is parsed correctly.
+    Note: The GPT API is inconsistent in how it formats the tool calls, this function makes sure it is parsed correctly.
     :param command: The command to parse, this can be a JSON string or a regular string.
     :return: The parsed command, or the original command if it couldn't be parsed.
     Usually the original command is the correct tool call, just not in JSON format.
@@ -451,7 +459,8 @@ def parse_command_from_json(command):
         return command
 
 
-def log_tool_call_in_message_graph(message_id, tool_call_message_id, tool_response_message_id, command, response):
+def log_tool_call_in_message_graph(message_id: int, tool_call_message_id: int, tool_response_message_id: int,
+                                   command: str, response: str) -> None:
     """
     Logs the tool call and its response in the message graph for persistence and future reference.
     :param message_id: The Discord ID of the original message.
@@ -465,7 +474,7 @@ def log_tool_call_in_message_graph(message_id, tool_call_message_id, tool_respon
                               reply_to=tool_call_message_id)
 
 
-def execute_python(code):
+def execute_python(code: str) -> Tuple[str, str]:
     """
     Executes Python code using a DockerPythonExecutor.
     Returns the output and any error encountered during execution.
@@ -477,7 +486,27 @@ def execute_python(code):
     return output, error
 
 
-async def fetch_messages_after_date(channel_id, after_date):
+# Message Scraping Functions
+
+
+async def scrape_and_save_messages(scrape_messages_channel_id: int, after_date: str) -> None:
+    messages = await fetch_messages_after_date(scrape_messages_channel_id, after_date)
+    print(f"Number of messages fetched: {len(messages)}")
+    # Extract the contents of the messages
+    message_content = [f"{message.content}" for message in messages]
+    # save the contents of the messages to a file using the GetMessages.py script
+    save_messages(message_content)
+
+    # Save each username's messages to a separate file
+    usernames = [f"{message.author.display_name}" for message in messages]
+    unique_usernames = set(usernames)
+    # save each username's messages to a separate file
+    for username in unique_usernames:
+        user_messages = [f"{message.content}" for message in messages if message.author.display_name == username]
+        save_messages(user_messages, f"individual/{username}.csv")
+
+
+async def fetch_messages_after_date(channel_id: int, after_date: str) -> List[discord.Message]:
     """
     Fetches messages from a channel after a specified date.
     :param channel_id: The ID of the channel to fetch messages from.
@@ -487,21 +516,21 @@ async def fetch_messages_after_date(channel_id, after_date):
 
     if not channel_id:
         print("Channel ID not provided.")
-        return
+        return []
     if not after_date:
         print("After date not provided.")
-        return
+        return []
 
     channel = discord_client.get_channel(channel_id)
     if not channel:
         print(f"Channel with ID {channel_id} not found.")
-        return
+        return []
 
     try:
         after_datetime = datetime.strptime(after_date, '%Y-%m-%d')
     except ValueError:
         print("Invalid date format. Please use 'YYYY-MM-DD'.")
-        return
+        return []
 
     messages = []
 
@@ -513,6 +542,6 @@ async def fetch_messages_after_date(channel_id, after_date):
 
 
 # Final setup
-discord_client.run(discord_api_key)
+discord_client.run(DISCORD_API_KEY)
 # Ensure that the message graph is saved when the bot exits
 atexit.register(lambda: message_graph.save_messages())
