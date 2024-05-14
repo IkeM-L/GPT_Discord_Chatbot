@@ -150,8 +150,7 @@ async def on_message(message: discord.Message) -> None:
         return
 
     # Process general messages
-    async with message.channel.typing():
-        await process_general_message(message)
+    await process_general_message(message)
 
 
 async def process_imitator_prompt(message: discord.Message) -> None:
@@ -181,7 +180,8 @@ async def process_general_message(message: discord.Message) -> None:
         reply_to=message_details['reply_to_id']
     )
 
-    response, error = await process_message(message_details)
+    async with message.channel.typing():
+        response, error = await process_message(message_details)
 
     if error:
         await message.reply(error)
